@@ -1,12 +1,15 @@
-module Tests exposing (..)
+module Tests exposing (all, fileContents, jsonPatchConstruct, jsonPatchTest, jsonPatchTests, normalize)
 
-import Test exposing (..)
+import Dict
 import Expect
 import Json.Decode as JD
-import Json.Encode as JE
 import Json.Decode.Pipeline as JD
+import Json.Decode.Extra as JDX
+import Json.Encode as JE
+import String
+import String.Conversions exposing (fromValue)
 import Json.Patch as Patch
-import Dict
+import Test exposing (..)
 
 
 all : Test
@@ -15,7 +18,7 @@ all =
         jsonPatchTests
 
 
-{-| Normalize value so that it can be compared after doing toString
+{-| Normalize value so that it can be compared after doing fromValue
 -}
 normalize : JD.Value -> JD.Value
 normalize value =
@@ -26,28 +29,33 @@ normalize value =
                 , JD.map JE.float JD.float
                 , JD.map JE.bool JD.bool
                 , JD.map
-                    (List.map normalize >> JE.list)
+                    (JE.list normalize)
                     (JD.list JD.value)
                 , JD.map
                     (Dict.map (always normalize) >> Dict.toList >> JE.object)
                     (JD.dict JD.value)
                 ]
             )
-        |> Result.withDefault (JE.null)
+        |> Result.withDefault JE.null
 
 
 jsonPatchTests =
-    JD.decodeString (JD.list jsonPatchTest) fileContents
+    JD.decodeString (JDX.indexedList jsonPatchTest) fileContents
         |> Result.withDefault []
 
 
-jsonPatchTest =
-    JD.decode jsonPatchConstruct
+jsonPatchTest i =
+    JD.succeed jsonPatchConstruct
         |> JD.required "doc" JD.value
         |> JD.required "patch" JD.value
         |> JD.optional "expected" (JD.map Just JD.value) Nothing
         |> JD.optional "error" (JD.map Just JD.string) Nothing
-        |> JD.optional "comment" JD.string "comment"
+        |> JD.optional "comment" 
+            ( JD.map 
+                ( \comment -> "(" ++ (String.fromInt i) ++ ") " ++ comment )
+                JD.string
+            )
+            ( "(" ++ (String.fromInt i) ++ ") No label" )
         |> JD.optional "disabled" JD.bool False
 
 
@@ -56,6 +64,7 @@ jsonPatchConstruct doc patch expected error comment disabled =
         \() ->
             if disabled then
                 Expect.pass
+
             else
                 case JD.decodeValue Patch.decoder patch of
                     Err e ->
@@ -64,31 +73,31 @@ jsonPatchConstruct doc patch expected error comment disabled =
                                 Expect.pass
 
                             Nothing ->
-                                Expect.fail e
+                                Expect.fail (JD.errorToString e)
 
-                    Ok patch ->
-                        case ( Patch.apply patch doc, expected, error ) of
+                    Ok p ->
+                        case ( Patch.apply p doc, expected, error ) of
                             ( Ok value, Just expectedValue, Nothing ) ->
-                                Expect.equal (toString (normalize expectedValue)) (toString (normalize value))
+                                Expect.equal (fromValue (normalize expectedValue)) (fromValue (normalize value))
 
-                            ( Err error, Nothing, Just expectedError ) ->
+                            ( Err e, Nothing, Just expectedError ) ->
                                 Expect.pass
 
                             ( Ok value, _, Just expectedError ) ->
-                                Expect.equal (expectedError) (toString (normalize value))
+                                Expect.equal expectedError (fromValue (normalize value))
 
-                            ( Err error, Just expectedValue, _ ) ->
-                                Expect.equal (toString (normalize expectedValue)) error
+                            ( Err e, Just expectedValue, _ ) ->
+                                Expect.equal (fromValue (normalize expectedValue)) e
 
-                            ( Err error, _, _ ) ->
-                                Expect.fail ("Unexpected error: " ++ error)
+                            ( Err e, _, _ ) ->
+                                Expect.fail ("Unexpected error: " ++ e)
 
                             _ ->
                                 Expect.pass
 
 
 {-| Tests from
-https://github.com/json-patch/json-patch-tests/blob/aa68c84fb12767e1388935c8bd1984d5960bde30/tests.json
+<https://github.com/json-patch/json-patch-tests/blob/aa68c84fb12767e1388935c8bd1984d5960bde30/tests.json>
 -}
 fileContents =
     """
