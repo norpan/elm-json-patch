@@ -1,24 +1,34 @@
-module Json.Patch exposing (Patch, Operation(..), apply, decoder, encoder)
+module Json.Patch exposing
+    ( Patch, Operation(..)
+    , apply
+    , encoder, decoder
+    )
 
 {-| This module implements JSON Patch as per
 [RFC 6902](https://tools.ietf.org/html/rfc6902).
 
+
 # Types
+
 @docs Patch, Operation
 
+
 # Operation
+
 @docs apply
 
+
 # Encoder/Decoder
+
 @docs encoder, decoder
+
 -}
 
-import Json.Decode as JD
-import Json.Decode.Pipeline as JD
-import Json.Encode as JE
-import Json.Pointer as Pointer
-import Json.Pointer exposing (..)
 import Dict
+import Json.Decode as JD
+import Json.Decode.Pipeline as JDP
+import Json.Encode as JE
+import Json.Pointer as Pointer exposing (..)
 
 
 {-| A `Patch` is a list of operations that are performed one after another.
@@ -42,6 +52,7 @@ type Operation
 
 Operations are applied to the `Value` in order, and if one operation fails,
 the whole `Patch` fails, and an error is returned instead.
+
 -}
 apply : Patch -> JD.Value -> Result String JD.Value
 apply patch value =
@@ -88,6 +99,7 @@ applyOperation op value =
                     (\v_ ->
                         if equals v v_ then
                             Ok value
+
                         else
                             Err "test failed"
                     )
@@ -114,33 +126,33 @@ decodeOperationCase : String -> JD.Decoder Operation
 decodeOperationCase operation =
     case operation of
         "add" ->
-            JD.decode Add
-                |> JD.required "path" Pointer.decoder
-                |> JD.required "value" JD.value
+            JD.succeed Add
+                |> JDP.required "path" Pointer.decoder
+                |> JDP.required "value" JD.value
 
         "remove" ->
-            JD.decode Remove
-                |> JD.required "path" Pointer.decoder
+            JD.succeed Remove
+                |> JDP.required "path" Pointer.decoder
 
         "replace" ->
-            JD.decode Replace
-                |> JD.required "path" Pointer.decoder
-                |> JD.required "value" JD.value
+            JD.succeed Replace
+                |> JDP.required "path" Pointer.decoder
+                |> JDP.required "value" JD.value
 
         "move" ->
-            JD.decode Move
-                |> JD.required "from" Pointer.decoder
-                |> JD.required "path" Pointer.decoder
+            JD.succeed Move
+                |> JDP.required "from" Pointer.decoder
+                |> JDP.required "path" Pointer.decoder
 
         "copy" ->
-            JD.decode Copy
-                |> JD.required "from" Pointer.decoder
-                |> JD.required "path" Pointer.decoder
+            JD.succeed Copy
+                |> JDP.required "from" Pointer.decoder
+                |> JDP.required "path" Pointer.decoder
 
         "test" ->
-            JD.decode Test
-                |> JD.required "path" Pointer.decoder
-                |> JD.required "value" JD.value
+            JD.succeed Test
+                |> JDP.required "path" Pointer.decoder
+                |> JDP.required "value" JD.value
 
         _ ->
             JD.fail <| "Unkown operation `" ++ operation ++ "`"
@@ -155,8 +167,7 @@ decodeOperationCase operation =
 encoder : Patch -> JE.Value
 encoder patch =
     List.map encodeOperation patch
-        |> List.map JE.object
-        |> JE.list
+        |> JE.list JE.object
 
 
 encodeOperation : Operation -> List ( String, JD.Value )
@@ -214,7 +225,7 @@ equals v1 v2 =
             (JD.decodeValue (JD.list JD.value) v2)
             |> Result.map (List.any identity)
             |> Result.withDefault False
-        , Result.map2 (List.map2 (\( k1, v1 ) ( k2, v2 ) -> k1 == k2 && equals v1 v2))
+        , Result.map2 (List.map2 (\( k1, v1_ ) ( k2, v2_ ) -> k1 == k2 && equals v1_ v2_))
             (Result.map Dict.toList (JD.decodeValue (JD.dict JD.value) v1))
             (Result.map Dict.toList (JD.decodeValue (JD.dict JD.value) v2))
             |> Result.map (List.any identity)
