@@ -2,6 +2,7 @@ module Json.Patch exposing
     ( Patch, Operation(..)
     , apply
     , encoder, decoder
+    , Error(..), TestFailure, errorToString
     )
 
 {-| This module implements JSON Patch as per
@@ -21,6 +22,11 @@ module Json.Patch exposing
 # Encoder/Decoder
 
 @docs encoder, decoder
+
+
+# Errors
+
+@docs Error, TestFailure, errorToString
 
 -}
 
@@ -48,61 +54,115 @@ type Operation
     | Test Pointer JD.Value
 
 
+{-| An error encountered while applying a patch, alongside the context of the patch being applied when it was
+encountered.
+-}
+type alias ErrorWithContext =
+    { index : Int
+    , operation : Operation
+    , error : Error
+    }
+
+
+{-| An error encountered while applying a patch.
+-}
+type Error
+    = PointerError Pointer.Error
+    | TestFailed TestFailure
+
+
+{-| An error where the actual value did not match the expected one in a test operation.
+-}
+type alias TestFailure =
+    { path : Pointer
+    , expected : JD.Value
+    , actual : JD.Value
+    }
+
+
 {-| Apply a `Patch` to a `Value`
 
 Operations are applied to the `Value` in order, and if one operation fails,
 the whole `Patch` fails, and an error is returned instead.
 
 -}
-apply : Patch -> JD.Value -> Result String JD.Value
-apply patch value =
-    case patch of
-        [] ->
-            Ok value
+apply : Patch -> JD.Value -> Result ErrorWithContext JD.Value
+apply =
+    let
+        internalApply index rest part =
+            case rest of
+                [] ->
+                    Ok part
 
-        p :: ps ->
-            applyOperation p value
-                |> Result.andThen (apply ps)
+                p :: ps ->
+                    applyOperation index p part
+                        |> Result.andThen (internalApply (index + 1) ps)
+    in
+    internalApply 0
 
 
-applyOperation : Operation -> JD.Value -> Result String JD.Value
-applyOperation op value =
-    case op of
-        Add path v ->
-            addAt path v value
+applyOperation : Int -> Operation -> JD.Value -> Result ErrorWithContext JD.Value
+applyOperation index op value =
+    let
+        opResult =
+            case op of
+                Add path v ->
+                    addAt path v value |> Result.mapError PointerError
 
-        Remove path ->
-            removeAt path value
+                Remove path ->
+                    removeAt path value |> Result.mapError PointerError
 
-        Replace path v ->
-            removeAt path value
-                |> Result.andThen (addAt path v)
+                Replace path v ->
+                    removeAt path value
+                        |> Result.andThen (addAt path v)
+                        |> Result.mapError PointerError
 
-        Move from to ->
-            getAt from value
-                |> Result.andThen
-                    (\x ->
-                        removeAt from value
-                            |> Result.andThen (addAt to x)
-                    )
+                Move from to ->
+                    getAt from value
+                        |> Result.andThen
+                            (\x ->
+                                removeAt from value
+                                    |> Result.andThen (addAt to x)
+                            )
+                        |> Result.mapError PointerError
 
-        Copy from to ->
-            getAt from value
-                |> Result.andThen
-                    (\x ->
-                        addAt to x value
-                    )
+                Copy from to ->
+                    getAt from value
+                        |> Result.andThen
+                            (\x ->
+                                addAt to x value
+                            )
+                        |> Result.mapError PointerError
 
-        Test at v ->
-            getAt at value
-                |> Result.andThen
-                    (\v_ ->
-                        if equals v v_ then
-                            Ok value
+                Test at v ->
+                    getAt at value
+                        |> Result.mapError PointerError
+                        |> Result.andThen
+                            (\v_ ->
+                                if equals v v_ then
+                                    Ok value
 
-                        else
-                            Err "test failed"
-                    )
+                                else
+                                    Err (TestFailed { path = at, expected = v, actual = v_ })
+                            )
+    in
+    opResult |> Result.mapError (ErrorWithContext index op)
+
+
+{-| Convert a patch application error into a `String` that is nice for debugging.
+-}
+errorToString : ErrorWithContext -> String
+errorToString { index, operation, error } =
+    let
+        issue =
+            case error of
+                PointerError e ->
+                    Pointer.errorToString e
+
+                TestFailed { actual } ->
+                    "Test failed: got '" ++ (actual |> JE.encode 0) ++ "'."
+    in
+    "During operation " ++ String.fromInt index ++ " '" ++ (operation |> encodeOperation |> JE.object |> JE.encode 0) ++ "': \n" ++ issue
 
 
 

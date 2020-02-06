@@ -2,6 +2,7 @@ module Json.Pointer exposing
     ( Pointer
     , addAt, removeAt, getAt
     , encoder, decoder
+    , Error(..), errorToString
     )
 
 {-| This module implements JSON Pointer as per
@@ -22,6 +23,11 @@ module Json.Pointer exposing
 
 @docs encoder, decoder
 
+
+# Errors
+
+@docs Error, errorToString
+
 -}
 
 import Array
@@ -41,9 +47,18 @@ type alias Pointer =
     List String
 
 
+{-| An error encountered while using a pointer.
+-}
+type Error
+    = FieldNotFound String
+    | BadIndex String
+    | IndexOutOfBounds Int
+    | JsonError JD.Error
+
+
 {-| Get the `Value` at the specified pointer.
 -}
-getAt : Pointer -> JD.Value -> Result String JD.Value
+getAt : Pointer -> JD.Value -> Result Error JD.Value
 getAt path value =
     case path of
         [] ->
@@ -60,7 +75,7 @@ getAt path value =
                 )
                 (\object ->
                     Dict.get name object
-                        |> Result.fromMaybe ("field not found: " ++ name)
+                        |> Result.fromMaybe (FieldNotFound name)
                 )
 
         name :: names ->
@@ -75,7 +90,7 @@ getAt path value =
                 )
                 (\object ->
                     Dict.get name object
-                        |> Result.fromMaybe ("field not found: " ++ name)
+                        |> Result.fromMaybe (FieldNotFound name)
                         |> Result.andThen (getAt names)
                 )
 
@@ -86,16 +101,16 @@ indexRegex =
         |> Maybe.withDefault Regex.never
 
 
-getArrayIndex : String -> Array.Array a -> Result String Int
+getArrayIndex : String -> Array.Array a -> Result Error Int
 getArrayIndex name array =
     if not (Regex.contains indexRegex name) then
-        Err "bad index"
+        Err (BadIndex name)
 
     else if name == "-" then
         Ok (Array.length array)
 
     else
-        String.toInt name |> Result.fromMaybe "not an integer"
+        String.toInt name |> Result.fromMaybe (BadIndex name)
 
 
 {-| Add the specified value at the specified pointer.
@@ -106,7 +121,7 @@ For adding to an array, this means inserting the value at the specified index
 For adding to an object, this means adding or replacing the specified field.
 
 -}
-addAt : Pointer -> JD.Value -> JD.Value -> Result String JD.Value
+addAt : Pointer -> JD.Value -> JD.Value -> Result Error JD.Value
 addAt path v value =
     handleCases
         { whenEmpty = Ok v
@@ -131,7 +146,7 @@ For removing from an array, this means deleting the value at the specified index
 For removing from an object, this means removing the specified field.
 
 -}
-removeAt : Pointer -> JD.Value -> Result String JD.Value
+removeAt : Pointer -> JD.Value -> Result Error JD.Value
 removeAt path value =
     handleCases
         { whenEmpty = Ok JE.null
@@ -145,7 +160,7 @@ removeAt path value =
                     Ok (JE.object (Dict.toList (Dict.remove field object)))
 
                 else
-                    Err ("removing nonexistent field: " ++ field)
+                    Err (FieldNotFound field)
         , path = path
         , operation = \rest -> removeAt rest
         , value = value
@@ -153,14 +168,14 @@ removeAt path value =
 
 
 handleCases :
-    { whenEmpty : Result String JD.Value
-    , whenArray : Array.Array JD.Value -> Int -> Result String JD.Value
-    , whenObject : Dict.Dict String JD.Value -> String -> Result String JD.Value
+    { whenEmpty : Result Error JD.Value
+    , whenArray : Array.Array JD.Value -> Int -> Result Error JD.Value
+    , whenObject : Dict.Dict String JD.Value -> String -> Result Error JD.Value
     , path : Pointer
-    , operation : Pointer -> JD.Value -> Result String JD.Value
+    , operation : Pointer -> JD.Value -> Result Error JD.Value
     , value : JD.Value
     }
-    -> Result String JD.Value
+    -> Result Error JD.Value
 handleCases { whenEmpty, whenArray, whenObject, path, operation, value } =
     case path of
         [] ->
@@ -190,22 +205,22 @@ handleCases { whenEmpty, whenArray, whenObject, path, operation, value } =
                 )
                 (\object ->
                     Dict.get name object
-                        |> Result.fromMaybe ("field not found: " ++ name)
+                        |> Result.fromMaybe (FieldNotFound name)
                         |> Result.andThen (\x -> operation names x)
                         |> Result.map (\x -> JE.object (Dict.toList (Dict.insert name x object)))
                 )
 
 
-get : Int -> Array.Array a -> Result String a
+get : Int -> Array.Array a -> Result Error a
 get i array =
     Array.get i array
-        |> Result.fromMaybe ("index out of bounds: " ++ String.fromInt i)
+        |> Result.fromMaybe (IndexOutOfBounds i)
 
 
-insert : Int -> a -> Array.Array a -> Result String (Array.Array a)
+insert : Int -> a -> Array.Array a -> Result Error (Array.Array a)
 insert i a array =
     if i > Array.length array then
-        Err ("index out of bounds: " ++ String.fromInt i)
+        Err (IndexOutOfBounds i)
 
     else
         Ok <|
@@ -214,10 +229,10 @@ insert i a array =
                 (Array.slice i (Array.length array) array)
 
 
-remove : Int -> Array.Array a -> Result String (Array.Array a)
+remove : Int -> Array.Array a -> Result Error (Array.Array a)
 remove i array =
     if i >= Array.length array then
-        Err ("index out of bounds: " ++ String.fromInt i)
+        Err (IndexOutOfBounds i)
 
     else
         Ok <|
@@ -228,9 +243,9 @@ remove i array =
 
 arrayOrObject :
     JD.Value
-    -> (Array.Array JD.Value -> Result String a)
-    -> (Dict.Dict String JD.Value -> Result String a)
-    -> Result String a
+    -> (Array.Array JD.Value -> Result Error a)
+    -> (Dict.Dict String JD.Value -> Result Error a)
+    -> Result Error a
 arrayOrObject v ifArray ifObject =
     case
         JD.decodeValue (JD.list JD.value) v
@@ -240,8 +255,26 @@ arrayOrObject v ifArray ifObject =
 
         Err _ ->
             JD.decodeValue (JD.dict JD.value) v
-                |> Result.mapError JD.errorToString
+                |> Result.mapError JsonError
                 |> Result.andThen ifObject
+
+
+{-| Convert a pointer error into a `String` that is nice for debugging.
+-}
+errorToString : Error -> String
+errorToString error =
+    case error of
+        FieldNotFound n ->
+            "Field not found: '" ++ n ++ "'."
+
+        BadIndex i ->
+            "Bad index: '" ++ i ++ "'."
+
+        IndexOutOfBounds i ->
+            "Index out of bounds: '" ++ String.fromInt i ++ "'."
+
+        JsonError e ->
+            JD.errorToString e
 
 
 

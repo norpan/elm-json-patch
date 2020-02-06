@@ -3,12 +3,12 @@ module Tests exposing (all, fileContents, jsonPatchConstruct, jsonPatchTest, jso
 import Dict
 import Expect
 import Json.Decode as JD
-import Json.Decode.Pipeline as JD
 import Json.Decode.Extra as JDX
+import Json.Decode.Pipeline as JD
 import Json.Encode as JE
+import Json.Patch as Patch
 import String
 import String.Conversions exposing (fromValue)
-import Json.Patch as Patch
 import Test exposing (..)
 
 
@@ -50,12 +50,12 @@ jsonPatchTest i =
         |> JD.required "patch" JD.value
         |> JD.optional "expected" (JD.map Just JD.value) Nothing
         |> JD.optional "error" (JD.map Just JD.string) Nothing
-        |> JD.optional "comment" 
-            ( JD.map 
-                ( \comment -> "(" ++ (String.fromInt i) ++ ") " ++ comment )
+        |> JD.optional "comment"
+            (JD.map
+                (\comment -> "(" ++ String.fromInt i ++ ") " ++ comment)
                 JD.string
             )
-            ( "(" ++ (String.fromInt i) ++ ") No label" )
+            ("(" ++ String.fromInt i ++ ") No label")
         |> JD.optional "disabled" JD.bool False
 
 
@@ -87,10 +87,10 @@ jsonPatchConstruct doc patch expected error comment disabled =
                                 Expect.equal expectedError (fromValue (normalize value))
 
                             ( Err e, Just expectedValue, _ ) ->
-                                Expect.equal (fromValue (normalize expectedValue)) e
+                                Expect.equal (fromValue (normalize expectedValue)) (Patch.errorToString e)
 
                             ( Err e, _, _ ) ->
-                                Expect.fail ("Unexpected error: " ++ e)
+                                Expect.fail ("Unexpected error: " ++ Patch.errorToString e)
 
                             _ ->
                                 Expect.pass
