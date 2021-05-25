@@ -26,7 +26,6 @@ module Json.Patch exposing
 
 import Dict
 import Json.Decode as JD
-import Json.Decode.Pipeline as JDP
 import Json.Encode as JE
 import Json.Pointer as Pointer exposing (..)
 
@@ -126,33 +125,33 @@ decodeOperationCase : String -> JD.Decoder Operation
 decodeOperationCase operation =
     case operation of
         "add" ->
-            JD.succeed Add
-                |> JDP.required "path" Pointer.decoder
-                |> JDP.required "value" JD.value
+            JD.map2 Add
+                (JD.field "path" Pointer.decoder)
+                (JD.field "value" JD.value)
 
         "remove" ->
-            JD.succeed Remove
-                |> JDP.required "path" Pointer.decoder
+            JD.map Remove
+                (JD.field "path" Pointer.decoder)
 
         "replace" ->
-            JD.succeed Replace
-                |> JDP.required "path" Pointer.decoder
-                |> JDP.required "value" JD.value
+            JD.map2 Replace
+                (JD.field "path" Pointer.decoder)
+                (JD.field "value" JD.value)
 
         "move" ->
-            JD.succeed Move
-                |> JDP.required "from" Pointer.decoder
-                |> JDP.required "path" Pointer.decoder
+            JD.map2 Move
+                (JD.field "from" Pointer.decoder)
+                (JD.field "path" Pointer.decoder)
 
         "copy" ->
-            JD.succeed Copy
-                |> JDP.required "from" Pointer.decoder
-                |> JDP.required "path" Pointer.decoder
+            JD.map2 Copy
+                (JD.field "from" Pointer.decoder)
+                (JD.field "path" Pointer.decoder)
 
         "test" ->
-            JD.succeed Test
-                |> JDP.required "path" Pointer.decoder
-                |> JDP.required "value" JD.value
+            JD.map2 Test
+                (JD.field "path" Pointer.decoder)
+                (JD.field "value" JD.value)
 
         _ ->
             JD.fail <| "Unkown operation `" ++ operation ++ "`"
