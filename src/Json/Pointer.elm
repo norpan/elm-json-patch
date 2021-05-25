@@ -276,10 +276,8 @@ splitAndUnescape string =
 unescape : String -> String
 unescape string =
     string
-        |> String.split "~1"
-        |> String.join "/"
-        |> String.split "~0"
-        |> String.join "~"
+        |> String.replace "~1" "/"
+        |> String.replace "~0" "~"
 
 
 
@@ -309,7 +307,5 @@ pointerToString pointer =
 escape : String -> String
 escape string =
     string
-        |> String.split "~"
-        |> String.join "~0"
-        |> String.split "/"
-        |> String.join "~1"
+        |> String.replace "~" "~0"
+        |> String.replace "/" "~1"
