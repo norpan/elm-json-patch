@@ -1,4 +1,4 @@
-module Json.Diff exposing (diff)
+module Json.Diff exposing (diff, Options)
 
 import Array exposing (Array)
 import Dict exposing (Dict)
