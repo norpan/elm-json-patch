@@ -1,8 +1,9 @@
-module Json.Diff exposing (Options, diff)
+module Json.Diff exposing (Options, atomicArray, diff)
 
 import Array exposing (Array)
 import Dict exposing (Dict)
 import Json.Decode as Decode
+import Json.Encode as Encode
 import Json.Patch as Patch exposing (Patch)
 import Json.Pointer exposing (Pointer)
 
@@ -10,6 +11,16 @@ import Json.Pointer exposing (Pointer)
 type alias Options =
     { arrayDiff : Array Decode.Value -> Array Decode.Value -> Patch
     }
+
+
+atomicArray : Array Decode.Value -> Array Decode.Value -> Patch
+atomicArray new _ =
+    [ Patch.Replace [] (Encode.array identity new)
+    ]
+
+
+
+--
 
 
 diff : Options -> Decode.Value -> Decode.Value -> Patch
