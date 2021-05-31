@@ -1,4 +1,4 @@
-module Json.Diff exposing (Options, atomicArray, diff)
+module Json.Diff exposing (Options, atomicArray, compare)
 
 import Array exposing (Array)
 import Dict exposing (Dict)
@@ -23,8 +23,8 @@ atomicArray new _ =
 --
 
 
-diff : Options -> Decode.Value -> Decode.Value -> Patch
-diff opt new old =
+compare : Options -> Decode.Value -> Decode.Value -> Patch
+compare opt new old =
     let
         values : Result Decode.Error ( Value, Value )
         values =
@@ -63,7 +63,7 @@ dictDiff opt new old =
 
         both : String -> Decode.Value -> Decode.Value -> Patch -> Patch
         both k new_ old_ acc =
-            (diff opt new_ old_ |> List.map (mapOperationPointer (\v -> k :: v))) ++ acc
+            (compare opt new_ old_ |> List.map (mapOperationPointer (\v -> k :: v))) ++ acc
 
         oldOnly : String -> Decode.Value -> Patch -> Patch
         oldOnly k _ acc =
