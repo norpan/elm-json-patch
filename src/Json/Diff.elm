@@ -9,7 +9,7 @@ import Json.Pointer exposing (Pointer)
 
 
 type alias Options =
-    { arrayDiff : Array Decode.Value -> Array Decode.Value -> Patch
+    { diffArray : Array Decode.Value -> Array Decode.Value -> Patch
     }
 
 
@@ -37,7 +37,7 @@ compare opt new old =
         Ok b ->
             case b of
                 ( Array_ new_, Array_ old_ ) ->
-                    opt.arrayDiff new_ old_
+                    opt.diffArray new_ old_
 
                 ( Object_ new_, Object_ old_ ) ->
                     dictDiff opt new_ old_
